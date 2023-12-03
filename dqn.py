@@ -82,11 +82,7 @@ class Qnet(nn.Module):
 
 def train(q, q_target, memory, optimizer):
     s, a, r, s_prime, done_mask = memory.sample(batch_size)
-    print(s.shape)
-    print(a.shape)
-    print(r.shape)
-    print(s_prime.shape)
-    print(done_mask.shape)
+
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     Q = q(s).gather(1, a)
     Q_prime_vals = q(s_prime)
@@ -163,7 +159,7 @@ def main():
                   change_count += 1
                 else:
                   change_count = 0
-                done_mask = 0.0 if terminated else 1.0
+                done_mask = 0.0 if (terminated or actions_taken < episode_length) else 1.0
 
                 memory.put((observation, action, reward, observation_prime, done_mask))
                 observation = observation_prime
