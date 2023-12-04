@@ -104,10 +104,12 @@ def train(q, q_target, memory, optimizer):
 def main():
     env = compiler_gym.make(
         "llvm-autophase-ic-v0",
-        benchmark="benchmark://cbench-v1/dijkstra",
+        benchmark="benchmark://cbench-v1/sha",
         observation_space="Autophase",
     )
     env = wrappers.TimeLimit(env, 45)
+    env.reset()
+    env.write_bitcode("sha.bc")
 
     # set seed for reproducibility
     seed = int(sys.argv[1])
@@ -135,31 +137,35 @@ def main():
     q_value = torch.tensor(0)
 
     with open(
-        f"data/llvm-autophase/Uniform-DDQN{sys.argv[1]}.csv", "w", newline=""
+        f"data/llvm-autophase/Uniform-DDQN-sha{sys.argv[1]}.csv", "w", newline=""
     ) as csvfile:
-        fieldnames = ["episode", "step", "score", "Q-value"]
+        fieldnames = ["episode", "step", "score", "Q-value", "state", "action-sequence"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for n_epi in range(10_000):
+        for n_epi in range(4_000):
             observation = env.reset()
             terminated = False
             patience = 5
             change_count = 0
-            episode_length=12
+            episode_length = 124
             actions_taken = 0
+            action_sequence = []
             while not terminated and actions_taken < episode_length:
                 epsilon = max(
                     0.1, 1.0 - 0.01 * (step / total_frames)
                 )  # Linear annealing from 1.0 to 0.1
                 action = q.sample_action(observation, epsilon)
+                action_sequence.append(int(action))
                 observation_prime, reward, terminated, info = env.step(action)
                 actions_taken += 1
                 if reward == 0:
-                  change_count += 1
+                    change_count += 1
                 else:
-                  change_count = 0
-                done_mask = 0.0 if (terminated or actions_taken < episode_length) else 1.0
+                    change_count = 0
+                done_mask = (
+                    0.0 if (terminated or actions_taken < episode_length) else 1.0
+                )
 
                 memory.put((observation, action, reward, observation_prime, done_mask))
                 observation = observation_prime
@@ -181,15 +187,17 @@ def main():
                 )
                 writer.writerow(
                     {
-                        "episode":n_epi,
+                        "episode": n_epi,
                         "step": step,
                         "score": score / print_interval,
                         "Q-value": q_value.item(),
+                        "state": observation,
+                        "action-sequence": action_sequence
                     }
                 )
                 csvfile.flush()
                 score = 0.0
-
+        env.write_bitcode("sha-optimized.bc")
     env.close()
 
 
