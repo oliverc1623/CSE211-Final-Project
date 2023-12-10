@@ -106,7 +106,7 @@ def learn(benchmark):
     env = compiler_gym.make(
         "llvm-autophase-ic-v0",
         benchmark=f"benchmark://cbench-v1/{benchmark}",
-        observation_space="Autophase",
+        observation_space="InstCount",
     )
     env = wrappers.TimeLimit(env, 45)
     env.reset()
@@ -121,8 +121,8 @@ def learn(benchmark):
     torch.manual_seed(seed)
 
     # initial Q net and target net
-    q = Qnet(56, 124)
-    q_target = Qnet(56, 124)
+    q = Qnet(70, 124)
+    q_target = Qnet(70, 124)
     q_target.load_state_dict(q.state_dict())
     q.to(device)
     q_target.to(device)
@@ -146,7 +146,7 @@ def learn(benchmark):
     q_value = torch.tensor(0)
 
     with open(
-        f"data/llvm-autophase/Uniform-DDQN-{benchmark}{sys.argv[1]}.csv",
+        f"data/llvm-autophase/InstCount-DDQN-{benchmark}{sys.argv[1]}.csv",
         "w",
         newline="",
     ) as csvfile:
@@ -236,29 +236,28 @@ def learn(benchmark):
 
 
 def main():
-    # benchmarks = [
-    #     "adpcm",
-    #     "bitcount",
-    #     "blowfish",
-    #     "bzip2",
-    #     "crc32",
-    #     "dijkstra",
-    #     "gsm",
-    #     "ispell",
-    #     "jpeg-c",
-    #     "jpeg-d",
-    #     "patricia",
-    #     "qsort",
-    #     "sha",
-    #     "stringsearch",
-    #     "stringsearch2",
-    #     "susan",
-    #     "tiff2bw",
-    #     "tiff2rgba",
-    #     "tiffdither",
-    #     "tiffmedian",
-    # ]
-    benchmarks = ["sha"]
+    benchmarks = [
+        "adpcm",
+        "bitcount",
+        "blowfish",
+        "bzip2",
+        "crc32",
+        "dijkstra",
+        "gsm",
+        "ispell",
+        "jpeg-c",
+        "jpeg-d",
+        "patricia",
+        "qsort",
+        "sha",
+        "stringsearch",
+        "stringsearch2",
+        "susan",
+        "tiff2bw",
+        "tiff2rgba",
+        "tiffdither",
+        "tiffmedian",
+    ]
 
     for b in benchmarks:
         print(f"Training benchmark: {b}")
