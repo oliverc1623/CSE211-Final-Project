@@ -132,6 +132,7 @@ def main():
     target_update_interval = 500
     train_start = 1_000
     score = 0
+    best_score = 0
     step = 0
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
     q_value = torch.tensor(0)
@@ -192,10 +193,12 @@ def main():
                         "score": score / print_interval,
                         "Q-value": q_value.item(),
                         "state": observation,
-                        "action-sequence": action_sequence
+                        "action-sequence": action_sequence,
                     }
                 )
                 csvfile.flush()
+                if score > best_score:
+                    torch.save(q.state_dict(), "models/sha_model")
                 score = 0.0
         env.write_bitcode("sha-optimized.bc")
     env.close()
