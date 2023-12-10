@@ -100,7 +100,9 @@ def train(q, q_target, memory, optimizer):
     optimizer.step()
     return Q.mean()
 
+
 def learn(benchmark):
+    # initialize environment
     env = compiler_gym.make(
         "llvm-autophase-ic-v0",
         benchmark=f"benchmark://cbench-v1/{benchmark}",
@@ -108,7 +110,7 @@ def learn(benchmark):
     )
     env = wrappers.TimeLimit(env, 45)
     env.reset()
-    env.write_bitcode(f"{benchmark}.bc")
+    env.write_bitcode(f"bitcode-files/{benchmark}-trial{sys.argv[1]}.bc")
 
     # set seed for reproducibility
     seed = int(sys.argv[1])
@@ -118,31 +120,41 @@ def learn(benchmark):
     random.seed(seed)
     torch.manual_seed(seed)
 
+    # initial Q net and target net
     q = Qnet(56, 124)
     q_target = Qnet(56, 124)
     q_target.load_state_dict(q.state_dict())
     q.to(device)
     q_target.to(device)
-    memory = ReplayBuffer(device)
+    memory = ReplayBuffer(device)  # replay buffer
 
+    # initialize action hashmap to remove duplicate optimizations
+    action_map = {}
+    for i in range(124):
+        action_map[i] = 0
+
+    # training parameters
     total_frames = 200  # Total number of frames for annealing
     print_interval = 1
     train_update_interval = 4
     target_update_interval = 500
     train_start = 1_000
     score = 0
+    best_score = 0
     step = 0
     optimizer = optim.Adam(q.parameters(), lr=learning_rate)
     q_value = torch.tensor(0)
 
     with open(
-        f"data/llvm-autophase/Uniform-DDQN-{benchmark}{sys.argv[1]}.csv", "w", newline=""
+        f"data/llvm-autophase/Uniform-DDQN-{benchmark}{sys.argv[1]}.csv",
+        "w",
+        newline="",
     ) as csvfile:
         fieldnames = ["episode", "step", "score", "Q-value", "state", "action-sequence"]
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         writer.writeheader()
 
-        for n_epi in range(100):
+        for n_epi in range(4_000):
             observation = env.reset()
             terminated = False
             patience = 5
@@ -150,40 +162,55 @@ def learn(benchmark):
             episode_length = 124
             actions_taken = 0
             action_sequence = []
-            while not terminated and actions_taken < episode_length:
-                epsilon = max(
-                    0.1, 1.0 - 0.01 * (step / total_frames)
-                )  # Linear annealing from 1.0 to 0.1
+            while (not terminated and actions_taken < episode_length):
+                # Linear annealing from 1.0 to 0.1
+                epsilon = max(0.1, 1.0 - 0.01 * (step / total_frames))
                 action = q.sample_action(observation, epsilon)
                 action_sequence.append(int(action))
                 observation_prime, reward, terminated, info = env.step(action)
+
+                action_map[action] += 1
+
+                if action_map[action] > 1:
+                    reward = 0
                 actions_taken += 1
                 if reward == 0:
                     change_count += 1
                 else:
                     change_count = 0
                 done_mask = (
-                    0.0 if (terminated or actions_taken < episode_length) else 1.0
+                    0.0
+                    if (
+                        terminated
+                        or actions_taken < episode_length
+                        or action_map[action] > 1
+                    )
+                    else 1.0
                 )
 
                 memory.put((observation, action, reward, observation_prime, done_mask))
                 observation = observation_prime
 
+                # gradient step
                 if step > train_start and step % train_update_interval == 0:
                     q_value = train(q, q_target, memory, optimizer)
-
+                
+                # soft target update
                 if step > train_start and step % target_update_interval == 0:
                     q_target.load_state_dict(q.state_dict())
 
                 score += reward
                 step += 1
-                if terminated or change_count > patience:
+                if terminated or change_count > patience or action_map[action] > 1:
                     break
 
             if n_epi % print_interval == 0:
+                # print training status
                 print(
                     f"episode :{n_epi}, step: {step}, score : {score/print_interval:.2f}, n_buffer : {memory.size()}, eps : {epsilon*100:.1f}%"
                 )
+                
+                # write to csv log
                 writer.writerow(
                     {
                         "episode": n_epi,
@@ -191,40 +218,47 @@ def learn(benchmark):
                         "score": score / print_interval,
                         "Q-value": q_value.item(),
                         "state": observation,
-                        "action-sequence": action_sequence
+                        "action-sequence": action_sequence,
                     }
                 )
                 csvfile.flush()
+                
+                # save best model
+                if score > best_score:
+                    torch.save(q.state_dict(), f"models/{benchmark}_model")
+                
+                # refresh action map and score
+                for i in range(124):
+                    action_map[i] = 0
                 score = 0.0
-        env.write_bitcode(f"{benchmark}-optimized.bc")
+        env.write_bitcode(f"bitcode-files/{benchmark}-optimized-trial{sys.argv[1]}.bc")
     env.close()
 
+
 def main():
-    benchmarks = [
-        "adpcm",
-        "bitcount",
-        "blowfish",
-        "bzip2",
-        "crc32",
-        "dijkstra",
-        "ghostscript",
-        "gsm",
-        "ispell",
-        "jpeg-c",
-        "jpeg-d",
-        "lame",
-        "patricia",
-        "qsort",
-        "rijndael",
-        "sha",
-        "stringsearch",
-        "stringsearch2",
-        "susan",
-        "tiff2bw",
-        "tiff2rgba",
-        "tiffdither",
-        "tiffmedian"
-    ]
+    # benchmarks = [
+    #     "adpcm",
+    #     "bitcount",
+    #     "blowfish",
+    #     "bzip2",
+    #     "crc32",
+    #     "dijkstra",
+    #     "gsm",
+    #     "ispell",
+    #     "jpeg-c",
+    #     "jpeg-d",
+    #     "patricia",
+    #     "qsort",
+    #     "sha",
+    #     "stringsearch",
+    #     "stringsearch2",
+    #     "susan",
+    #     "tiff2bw",
+    #     "tiff2rgba",
+    #     "tiffdither",
+    #     "tiffmedian",
+    # ]
+    benchmarks = ["sha"]
 
     for b in benchmarks:
         print(f"Training benchmark: {b}")
