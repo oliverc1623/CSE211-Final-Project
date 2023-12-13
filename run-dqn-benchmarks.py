@@ -1,6 +1,7 @@
 import compiler_gym
 from compiler_gym import wrappers
 import collections
+from collections import deque
 import random
 import numpy as np
 import sys, os
@@ -106,11 +107,14 @@ def learn(benchmark):
     env = compiler_gym.make(
         "llvm-autophase-ic-v0",
         benchmark=f"benchmark://cbench-v1/{benchmark}",
-        observation_space="InstCount",
+        observation_space="Autophase",
+        reward_space="IrInstructionCountOz",
     )
     env = wrappers.TimeLimit(env, 45)
     env.reset()
-    env.write_bitcode(f"bitcode-files/{benchmark}-trial{sys.argv[1]}.bc")
+    env.write_bitcode(
+        f"bitcode-files/cbench-{benchmark}-trial{sys.argv[1]}-autophase-IrInstructionCountOz.bc"
+    )
 
     # set seed for reproducibility
     seed = int(sys.argv[1])
@@ -121,8 +125,8 @@ def learn(benchmark):
     torch.manual_seed(seed)
 
     # initial Q net and target net
-    q = Qnet(70, 124)
-    q_target = Qnet(70, 124)
+    q = Qnet(56, 124)
+    q_target = Qnet(56, 124)
     q_target.load_state_dict(q.state_dict())
     q.to(device)
     q_target.to(device)
@@ -146,7 +150,7 @@ def learn(benchmark):
     q_value = torch.tensor(0)
 
     with open(
-        f"data/llvm-autophase/InstCount-DDQN-{benchmark}{sys.argv[1]}.csv",
+        f"data/llvm-autophase/cbench-Autophase-DDQN-b{benchmark}_{sys.argv[1]}_autophase_IrInstructionCountOz.csv",
         "w",
         newline="",
     ) as csvfile:
@@ -157,12 +161,12 @@ def learn(benchmark):
         for n_epi in range(4_000):
             observation = env.reset()
             terminated = False
-            patience = 5
+            patience = 10
             change_count = 0
             episode_length = 124
             actions_taken = 0
             action_sequence = []
-            while (not terminated and actions_taken < episode_length):
+            while not terminated and actions_taken < episode_length:
                 # Linear annealing from 1.0 to 0.1
                 epsilon = max(0.1, 1.0 - 0.01 * (step / total_frames))
                 action = q.sample_action(observation, epsilon)
@@ -194,7 +198,7 @@ def learn(benchmark):
                 # gradient step
                 if step > train_start and step % train_update_interval == 0:
                     q_value = train(q, q_target, memory, optimizer)
-                
+
                 # soft target update
                 if step > train_start and step % target_update_interval == 0:
                     q_target.load_state_dict(q.state_dict())
@@ -209,7 +213,7 @@ def learn(benchmark):
                 print(
                     f"episode :{n_epi}, step: {step}, score : {score/print_interval:.2f}, n_buffer : {memory.size()}, eps : {epsilon*100:.1f}%"
                 )
-                
+
                 # write to csv log
                 writer.writerow(
                     {
@@ -222,16 +226,21 @@ def learn(benchmark):
                     }
                 )
                 csvfile.flush()
-                
+
                 # save best model
                 if score > best_score:
-                    torch.save(q.state_dict(), f"models/{benchmark}_model")
-                
+                    torch.save(
+                        q.state_dict(),
+                        f"models/{benchmark}-model-autophase-IrInstructionCountOz",
+                    )
+
                 # refresh action map and score
                 for i in range(124):
                     action_map[i] = 0
                 score = 0.0
-        env.write_bitcode(f"bitcode-files/{benchmark}-optimized-trial{sys.argv[1]}.bc")
+        env.write_bitcode(
+            f"bitcode-files/{benchmark}-optimized-trial{sys.argv[1]}-autophase-IrInstructionCountOz.bc"
+        )
     env.close()
 
 
@@ -259,6 +268,7 @@ def main():
         "tiffmedian",
     ]
 
+    # benchmarks = ["2", "17", "31", "44"]
     for b in benchmarks:
         print(f"Training benchmark: {b}")
         learn(b)
